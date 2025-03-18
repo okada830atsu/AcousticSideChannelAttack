@@ -45,9 +45,8 @@ def key_to_label(key):
     
     return label
 
-def detect_keypoint(wv):
-    th = 0.1       # 打鍵判定する閾値
-    lock = 8000     # 次の打鍵まで判定しないサンプル数
+def detect_keypoint(wv, th=0.1, lock=8000):
+    wv = wv[0]
     kp = []
     key_marker = []
     i = 0
@@ -63,6 +62,8 @@ def detect_keypoint(wv):
     return kp,key_marker
 
 def get_melspectrogram(wv):
+    # 引数：1*16384のtensor
+    # 出力：64*64のスペクトログラム
     spectrogram = T.MelSpectrogram(
         sample_rate=SAMPLE_RATE,
         n_fft=N_FFT,
@@ -150,37 +151,25 @@ def make_dataset_all(path, hop):
 
 def make_dataset_points(path):
 
-    
-    spectrogram = T.MelSpectrogram(
-        sample_rate=SAMPLE_RATE,
-        n_fft=N_FFT,
-        n_mels=N_MEL,
-        win_length=None,
-        hop_length=N_HOP,
-        window_fn=torch.hann_window,
-        power=2.0,
-    )
-    
     waveform, sample_rate = torchaudio.load(uri=path)
-    waveform = waveform[0]
+    plt.plot(waveform[0])
+    plt.grid()
+    plt.show()
+    th_input = input('threshod(float) : ')
     
-    key_point, key_marker = detect_keypoint(waveform)
-    
+    key_point, key_marker = detect_keypoint(waveform, th=float(th_input))
     frame_num = len(key_point)
     print(f"{frame_num} keys ware detected.")
+    
     X = torch.zeros(frame_num,1,64,64, dtype=torch.float32)
     y = torch.zeros(frame_num, dtype=torch.int64)
 
     for i,p in enumerate(tqdm(key_point)):
-        spec = spectrogram(waveform[p-5000:p+11384]).numpy()     # 5000をピーク値
-        spec = spec[0:64,0:64]
-        spec = np.log(spec)
-        spec = (spec - np.min(spec)) / (np.max(spec) - np.min(spec))
-        #plt.imshow(spec)
-        #plt.show()
+        # キー検出点をもとにフレーズで抽出，5000をピーク
+        phrase = waveform[:,p-5000:p+11384]
+        spec = get_melspectrogram(phrase)
         X[i] = torch.from_numpy(spec)
         #print(f'Dataset creating... {i+1}/{frame_num}')
-
 
     dataset = torch.utils.data.TensorDataset(X,y)
 
