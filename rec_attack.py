@@ -11,7 +11,7 @@ from multiprocessing import Value, Process
 FORMAT = pyaudio.paInt16
 RATE = 44100
 CHANNEL = 1
-FILEPATH = 'attack_files/helloworld0318.wav'
+FILEPATH = 'attack_files/helloworld0319.wav'
 frame_size = 1024
 
 def audiostart(buf_num):
@@ -45,7 +45,8 @@ def key_detect(sm):
 def savesounds(sm):
     audio, stream = audiostart(frame_size)
     sound = []
-
+    
+    time.sleep(1)
     print("Recoding Start...")
 
     while True:
@@ -54,7 +55,8 @@ def savesounds(sm):
         # キューに1フレーム分を代入
         sound.append(np.frombuffer(stream.read(frame_size), dtype='int16'))
 
-        if key == '/' :   
+        if key == '/' :  
+            sound = np.array(sound).flatten()[3000:]
             # 保存
             wavFile = wave.open(FILEPATH, 'wb')
             wavFile.setnchannels(CHANNEL)
@@ -64,7 +66,7 @@ def savesounds(sm):
             wavFile.close() 
             audiostop(audio, stream)
             print("Recording completed!")
-            plt.plot(np.array(sound).flatten())
+            plt.plot(sound)
             plt.show()
             print(f"Saved to {FILEPATH}")
             break
