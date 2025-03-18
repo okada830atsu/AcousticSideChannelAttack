@@ -33,6 +33,7 @@ AUG_NOISE_GAIN      = 0
 BATCH_SIZE          = 64
 N_EPOCH             = 1000
 LR                  = 0.001
+ATTACK_OUT_RANK     = 4
 
 
 
@@ -371,10 +372,14 @@ def attack():
         data = data.to(device)
         labels = labels.to(device)
         output = net(data)
-        output_label = torch.max(output,1)[1]
-        F.softmax(output, dim=1)
-        for l in output_label:
-            print(keys[l])
+        output_softmax = F.softmax(output, dim=1).cpu().detach().numpy()
+        for j, out in enumerate(output_softmax):
+            sorted = np.argsort(out)[::-1]
+            print(f'key{j} : ', end='')
+            for k in range(ATTACK_OUT_RANK):
+                print(f'{keys[sorted[k]]} ({out[sorted[k]]*100}%), ', end='')
+            print('')
+        
     
     """df = pd.DataFrame(result, columns=['0','1','2','3','4','5','6','7','8','9',
                                        'a','b','c','d','e','f','g','h','i','j',
