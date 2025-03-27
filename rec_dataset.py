@@ -11,7 +11,7 @@ from multiprocessing import Value, Process
 FORMAT = pyaudio.paInt16
 RATE = 44100
 CHANNEL = 1
-FILEPATH = 'dataset/test'
+FILEPATH = 'dataset/val'
 frame_size = 1024
 frame_num  = 256
 
@@ -120,7 +120,7 @@ def save(sm):
             #plt.plot(peaked_phrase)
             #plt.show()
             # 保存
-            fn = FILEPATH + '/' + key + '_' + str(sound_id) + '.wav'
+            fn = FILEPATH + '/' + key + '_' + str(sound_id) + '_2.wav'
             wavFile = wave.open(fn, 'wb')
             #wavFile = wave.open('testsound.wav', 'wb')
             wavFile.setnchannels(CHANNEL)

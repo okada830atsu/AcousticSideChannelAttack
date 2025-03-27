@@ -11,6 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from tqdm import tqdm
 import os
 import re
@@ -27,11 +28,11 @@ N_HOP               = 192
 TRAIN_DATA_PATH     = 'dataset/train'
 VAL_DATA_PATH       = 'dataset/val'
 TEST_DATA_PATH      = 'dataset/test'
-MODEL_PATH          = 'models/model_3.pt'
+MODEL_PATH          = 'models/model_4.pt'
 ATTACK_DATA_PATH    = 'attack_files/helloworld0323.wav'
 AUG_MASK            = 1
 BATCH_SIZE          = 64
-N_EPOCH             = 1000
+N_EPOCH             = 200
 LR                  = 0.001
 ATTACK_OUT_RANK     = 4
 
@@ -126,10 +127,10 @@ def make_dataset(path, num_mask):
         
         label_val = re.search(r'\\(.+).',file).group(1)    # \ と \ に挟まれた部分を検索し，int型に変換
         label_val = key_to_label_val(str(label_val[0]))
-        label = label_mask(64, label_val, 5, 55)
+        label = label_mask(64, label_val, 4, 56)
         
         #plt.plot(waveform)
-        #plt.imshow(spec_masked)
+        #plt.imshow(spec)
         #plt.plot(label, c='white')
         #plt.show()
 
@@ -193,10 +194,10 @@ def learn():
         total = 0
         for data, labels in tqdm(train_loader):
             # --- オンラインデータオーギュメンテーションをここで適用 ---
-            data_aug = torch.zeros_like(data)
-            for i in range(data.shape[0]):
-                data_aug[i] = apply_spec_augment(data[i])
-            data = data_aug
+            #data_aug = torch.zeros_like(data)
+            #for i in range(data.shape[0]):
+            #    data_aug[i] = apply_spec_augment(data[i])
+            #data = data_aug
             # -----------------------------------------------------------
             data, labels = data.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -268,42 +269,58 @@ def learn():
     plt.savefig("img/loss.png")
 
     plt.figure()
+    plt.plot(range(1, N_EPOCH+1), history["train_acc"])
     plt.plot(range(1, N_EPOCH+1), history["validation_acc"])
     plt.title("test accuracy")
     plt.xlabel("epoch")
     plt.savefig("img/test_acc.png")
 
 def test():
-    
-    device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f'Device : {device}')
 
     net = U_Net_37.UNet1DSlice().to(device)
-    
-    test_set    = make_dataset(TEST_DATA_PATH, AUG_MASK)
+    test_set = make_dataset(TEST_DATA_PATH, AUG_MASK)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=BATCH_SIZE, shuffle=False)
-    
-    params = torch.load(MODEL_PATH,map_location=torch.device(device))
-    
-    net.load_state_dict(params)
 
+    params = torch.load(MODEL_PATH, map_location=device)
+    net.load_state_dict(params)
     net.eval()
-    
+
     correct = 0
     total = 0
-    for i, (data,labels) in enumerate(test_loader):
+
+    all_preds = []  # 全ての予測
+    all_labels = []  # 全ての正解
+
+    for i, (data, labels) in enumerate(test_loader):
         data, labels = data.to(device), labels.to(device)
         output = net(data)
-        pred = output.argmax(dim=2)
+        pred = output.argmax(dim=2)  # (B,64)
+
         correct += (pred == labels).sum().item()
         total += labels.numel()
-        print("predict: ",pred)
-        print("label  : ",labels)
 
-    print("Acc: ",(correct / total))
-    
-    
+        all_preds.append(pred.cpu().numpy())
+        all_labels.append(labels.cpu().numpy())
+
+    acc = correct / total
+    print("Test Accuracy: {:.4f}".format(acc))
+
+    # --- 混同行列の描画 ---
+    all_preds = np.concatenate(all_preds).flatten()   # (B*64,)
+    all_labels = np.concatenate(all_labels).flatten() # (B*64,)
+    cm = confusion_matrix(all_labels, all_preds, labels=list(range(37)))
+
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[str(i) for i in range(10)] + list("abcdefghijklmnopqrstuvwxyz") + ["none"])
+    fig, ax = plt.subplots(figsize=(12, 10))
+    disp.plot(ax=ax, cmap='Blues', xticks_rotation=90)
+    plt.title("Confusion Matrix")
+    plt.tight_layout()
+    plt.show()
+
     return
+
 
 def attack():
     
@@ -326,7 +343,7 @@ def attack():
         data = data.to(device)
         labels = labels.to(device)
         output = net(data)
-        output_softmax = F.softmax(output, dim=1).cpu().detach().numpy()
+        output_softmax = F.softmax(output, dim=2).cpu().detach().numpy()
     
     df = pd.DataFrame(output_softmax[0], columns=['0','1','2','3','4','5','6','7','8','9',
                                        'a','b','c','d','e','f','g','h','i','j',
