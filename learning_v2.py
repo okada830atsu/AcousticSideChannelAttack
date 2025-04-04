@@ -25,15 +25,16 @@ SAMPLE_RATE         = 44100
 N_MEL               = 64
 N_FFT               = 1024
 N_HOP               = 192
-TRAIN_DATA_PATH     = 'dataset/train'
-VAL_DATA_PATH       = 'dataset/val'
-TEST_DATA_PATH      = 'dataset/test'
-MODEL_PATH          = 'models/model_3.pt'
-ATTACK_DATA_PATH    = 'attack_files/helloworld0319.wav'
-AUG_MASK            = 1
+TRAIN_DATA_PATH     = './dataset/train'
+VAL_DATA_PATH       = './dataset/val'
+TEST_DATA_PATH      = './dataset/test'
+MODEL_PATH          = './models/model_4.pt'
+ATTACK_DATA_PATH    = './attack_files/helloworld0318.wav'
+AUG_NOISE_NUM       = 1
+AUG_NOISE_GAIN_MAX  = 1
 BATCH_SIZE          = 64
 N_EPOCH             = 200
-LR                  = 0.001
+LR                  = 0.0005
 ATTACK_OUT_RANK     = 4
 
 
@@ -76,10 +77,16 @@ def get_melspectrogram(wv):
     win = torch.hann_window(16384)
     spec = spectrogram(wv).numpy()[0]
     spec = np.delete(spec,64,1)
-    spec = np.log(spec)
+    spec = np.log(spec + 1e-10)
     spec = (spec - np.min(spec)) / (np.max(spec) - np.min(spec))
 
-    return spec
+    return spec.astype(np.float32)
+
+def apply_noise_augment(noise_files_path, noise_gain):
+    
+
+    return
+
 
 def apply_spec_augment(spectrogram, time_mask_param=10, freq_mask_param=8, num_time_masks=2, num_freq_masks=2):
     """
@@ -98,6 +105,7 @@ def apply_spec_augment(spectrogram, time_mask_param=10, freq_mask_param=8, num_t
         f0 = random.randint(0, max(1, H - f))
         augmented[:, f0:f0 + f, :] = augmented.mean()
 
+    
     return augmented
 
 def label_mask(n,val,a,b):
@@ -112,8 +120,10 @@ def label_mask(n,val,a,b):
 
 def make_dataset(path, num_mask):
     
-    files = glob.glob(path+'/*')
+    files = os.listdir(path)
     num = len(files)
+
+
     
     X = torch.zeros(num*num_mask,1,64,64, dtype=torch.float32)
     y = torch.zeros(num*num_mask,64, dtype=torch.int64)
@@ -121,11 +131,11 @@ def make_dataset(path, num_mask):
     
     for filecount,file in enumerate(tqdm(files)):
         #print(file)
-        waveform, sample_rate = torchaudio.load(uri=file)
+        waveform, sample_rate = torchaudio.load(uri=path+'/'+file)
         
         spec = get_melspectrogram(waveform)[:,11:11+64] #中央部分をカット
         
-        label_val = re.search(r'\\(.+).',file).group(1)    # \ と \ に挟まれた部分を検索し，int型に変換
+        label_val = file[0]
         label_val = key_to_label_val(str(label_val[0]))
         label = label_mask(64, label_val, 4, 56)
         
@@ -148,8 +158,8 @@ def make_dataset_all(path):
     
     spec= get_melspectrogram(waveform)
     
-    plt.imshow(spec)
-    plt.show()
+    #plt.imshow(spec)
+    #plt.show()
     
     X = torch.zeros(1,1,64,spec.shape[1], dtype=torch.float32)
     y = torch.zeros(1,spec.shape[1], dtype=torch.int64)
@@ -163,17 +173,17 @@ def make_dataset_all(path):
 
 
 def learn():
-    train_set = make_dataset(TRAIN_DATA_PATH, AUG_MASK)
-    val_set   = make_dataset(VAL_DATA_PATH, AUG_MASK)
+    train_set = make_dataset(TRAIN_DATA_PATH, AUG_NOISE_NUM)
+    val_set   = make_dataset(VAL_DATA_PATH,   AUG_NOISE_NUM)
     print("Datasets were created.")
 
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader   = torch.utils.data.DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader   = torch.utils.data.DataLoader(val_set,   batch_size=BATCH_SIZE, shuffle=True)
 
     history = {"train_loss": [], "validation_loss": [], "train_acc": [], "validation_acc": []}
 
-    fig, ax = plt.subplots(1, 2, figsize=(9, 4))
-    ax_loss, ax_acc = ax[0], ax[1]
+    #fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+    #ax_loss, ax_acc = ax[0], ax[1]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f'Device : {device}')
@@ -194,10 +204,10 @@ def learn():
         total = 0
         for data, labels in tqdm(train_loader):
             # --- オンラインデータオーギュメンテーションをここで適用 ---
-            #data_aug = torch.zeros_like(data)
-            #for i in range(data.shape[0]):
-            #    data_aug[i] = apply_spec_augment(data[i])
-            #data = data_aug
+            data_aug = torch.zeros_like(data)
+            for i in range(data.shape[0]):
+                data_aug[i] = apply_spec_augment(data[i])
+            data = data_aug   
             # -----------------------------------------------------------
             data, labels = data.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -243,6 +253,7 @@ def learn():
 
         print(f"Epoch {e}: Train Loss={train_loss:.4f}, Val Loss={val_loss:.4f}, Train Acc={accuracy_train:.4f}, Val Acc={accuracy_val:.4f}, Best={best_accuracy:.4f}")
 
+        """
         ax_loss.cla()
         ax_loss.plot(history["train_loss"], label="train loss")
         ax_loss.plot(history["validation_loss"], label="val loss")
@@ -255,12 +266,14 @@ def learn():
         ax_acc.plot(history["validation_acc"], label="val acc")
         ax_acc.set_ylabel("Accuracy")
         ax_acc.set_xlabel("Epoch")
-        ax_acc.legend()
-        plt.pause(0.1)
+        ax_acc.legend()"
         
+        plt.pause(0.1)
+        """
     
     #結果
     #print(history)
+    
     plt.figure()
     plt.plot(range(1, N_EPOCH+1), history["train_loss"], label="train_loss")
     plt.plot(range(1, N_EPOCH+1), history["validation_loss"], label="validation_loss")
@@ -273,7 +286,8 @@ def learn():
     plt.plot(range(1, N_EPOCH+1), history["validation_acc"])
     plt.title("test accuracy")
     plt.xlabel("epoch")
-    plt.savefig("img/test_acc.png")
+    plt.savefig("img/acc.png")
+    
 
 def test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -312,12 +326,12 @@ def test():
     all_labels = np.concatenate(all_labels).flatten() # (B*64,)
     cm = confusion_matrix(all_labels, all_preds, labels=list(range(37)))
 
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[str(i) for i in range(10)] + list("abcdefghijklmnopqrstuvwxyz") + ["none"])
-    fig, ax = plt.subplots(figsize=(12, 10))
-    disp.plot(ax=ax, cmap='Blues', xticks_rotation=90)
-    plt.title("Confusion Matrix")
-    plt.tight_layout()
-    plt.show()
+    #disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[str(i) for i in range(10)] + list("abcdefghijklmnopqrstuvwxyz") + ["none"])
+    #fig, ax = plt.subplots(figsize=(12, 10))
+    #disp.plot(ax=ax, cmap='Blues', xticks_rotation=90)
+    #plt.title("Confusion Matrix")
+    #plt.tight_layout()
+    #plt.show()
 
     return
 
